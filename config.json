@@ -1,0 +1,7 @@
+{
+	"my_mplayer_need_copying_file_to_temp": false,
+	"clean_normal_docs_over_n_days": 300,
+	"clean_favorite_docs_over_n_days": 500,
+	"sync_feed_on_start": false,
+	"directory_list_for_pics_to_relate": []
+}
