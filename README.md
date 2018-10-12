@@ -2,7 +2,7 @@
 ![](screenshots/main.png)
 
 ## Quick Start Guide:
-
+0. Installation: https://ankiweb.net/shared/info/143084803
 1. Menu "Tool" -> "Relate to My Doc" -> "Set NoteType to Relate", select note types,  on which types of cards you would like the add-on to should related documents.
 2. Build you text/picture/audio/video documents in local database or local file as you like:
     -- "Tool" -> "Relate to My Doc" -> "Load from Feed", you can a. input text manually, b. load from local text files to local DB, c. add RSS feed address and sync content.
