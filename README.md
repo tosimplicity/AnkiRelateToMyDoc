@@ -1,4 +1,7 @@
+
 **Show the related text/picture/audio/video documents pre-stored in local database or local file, by a simple search.**
+
+
 ![](screenshots/main.png)
 
 ## Quick Start Guide:
