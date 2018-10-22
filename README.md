@@ -33,3 +33,12 @@
 2. This add-on is licensed under GPL v3, or higher
 3. FeedParser is packaged inside unchanged. Link: https://github.com/kurtmckee/feedparser
 4. Beautiful Soup is packaged inside unchanged. Link: http://www.crummy.com/software/BeautifulSoup/
+
+## Version History
+
+Version 0.51
+- add rmvb as video extension
+- fix error in feed loading with empty id
+
+Version 0.5
+- Initial release

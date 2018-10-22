@@ -18,7 +18,7 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 # from . import myRes_rc
 
-__version__ = "0.5"
+__version__ = "0.51"
 __license__ = "GNU Affero General Public License, version 3 or later"
 
 import ssl
@@ -48,7 +48,7 @@ Subs for video should be *.srt in standard SRT format.
 Video/Audio should be located in same folder with identical file name except file extension.
 For example.lrc or example.srt, media files should be example.mp3, example.mp4, example.mkv
 For audio, only *.mp3 file would be searched.
-For video, search first found: *.mp4, *.mkv, *.avi, *.flv, *.m4v, *.f4v
+For video, search first found: *.mp4, *.mkv, *.avi, *.flv, *.m4v, *.f4v, *.rmvb
 (MPlayer can play files in many more formats. But you need to change extension for add-on to search.
 Like changing example.rmvb to example.avi)
 *** Load Sub: The Subs file will be loaded into local db if media file is found.

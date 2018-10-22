@@ -342,10 +342,10 @@ class LoadFeedDialog(QDialog, Ui_load_feed_dialog):
                                     break
                             if not feed_id_using_name:
                                 feed_id_using_name = "id"
-                    data_entry["feed_entry_id"] = getattr(entry, feed_id_using_name, "")
-                    if data_entry["feed_entry_id"] in feed_current_entry_id_list:
+                    data_entry["feed_entry_id"] = getattr(entry, feed_id_using_name, "").strip()
+                    if data_entry["feed_entry_id"] and data_entry["feed_entry_id"] in feed_current_entry_id_list:
                         continue
-                    else:
+                    elif data_entry["feed_entry_id"]:
                         feed_current_entry_id_list.append(data_entry["feed_entry_id"])
                     data_entry["link"] = getattr(entry, "link", "")
                     data_entry["title"] = getattr(entry, "title", "").strip()
@@ -819,7 +819,7 @@ def load_media_subs():
                     self.signals.error_message.emit("File not found: %s" % media_path_no_ext + ".mp3")
                     return
             else:
-                video_ext = (".mp4", ".mkv", ".avi", ".flv", ".m4v", ".f4v")
+                video_ext = (".mp4", ".mkv", ".avi", ".flv", ".m4v", ".f4v", ".rmvb")
                 media_ext = ""
                 for ext in video_ext:
                     if os.path.isfile(media_path_no_ext + ext):
