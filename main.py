@@ -329,6 +329,7 @@ class LoadFeedDialog(QDialog, Ui_load_feed_dialog):
                 feed_current_entry_id_list = []
                 for entry in feed.entries:
                     data_entry = {}
+                    data_entry["link"] = getattr(entry, "link", "").strip()
                     # feed_id_using_name if "id" not the right word, try to find the right one
                     # if can not find any, set it as "id"
                     if not feed_id_using_name:
@@ -340,6 +341,8 @@ class LoadFeedDialog(QDialog, Ui_load_feed_dialog):
                                 if key and "id" in key.lower() and isinstance(entry[key], str) and entry[key]:
                                     feed_id_using_name = key
                                     break
+                            if not feed_id_using_name and data_entry["link"]:
+                                feed_id_using_name = "link"
                             if not feed_id_using_name:
                                 feed_id_using_name = "id"
                     data_entry["feed_entry_id"] = getattr(entry, feed_id_using_name, "").strip()
@@ -347,7 +350,6 @@ class LoadFeedDialog(QDialog, Ui_load_feed_dialog):
                         continue
                     elif data_entry["feed_entry_id"]:
                         feed_current_entry_id_list.append(data_entry["feed_entry_id"])
-                    data_entry["link"] = getattr(entry, "link", "")
                     data_entry["title"] = getattr(entry, "title", "").strip()
                     summary = getattr(entry, "description", "").strip()
                     content = getattr(entry, "content", [{"value":""}])[0]["value"].strip()
