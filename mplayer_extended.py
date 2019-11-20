@@ -181,7 +181,7 @@ def queueMplayer(path, start_sec_p=0, end_sec_p=0):
         end_sec = end_sec_p
         if stop_play_timer and stop_play_timer.is_alive():
             stop_play_timer.cancel()
-        stop_play_timer = threading.Timer(10.0, stop_as_planned, kwargs={"media_path_to_stop": media_to_play})
+        stop_play_timer = threading.Timer(end_sec - start_sec, stop_as_planned, kwargs={"media_path_to_stop": media_to_play})
         stop_play_timer.start()
     else:
         end_sec = 0
