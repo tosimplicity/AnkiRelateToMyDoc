@@ -11,7 +11,7 @@ from aqt import mw
 from PyQt5.Qt import *
 from PyQt5.Qt import QDialog, QWebEngineView, QIcon, QPixmap
 
-from .utils import get_path, show_text, html_to_text, log
+from .utils import get_path, show_text, html_to_text
 from .ui_relate_to_my_doc import Ui_relate_to_my_doc_dialog
 from . import mplayer_extended
 

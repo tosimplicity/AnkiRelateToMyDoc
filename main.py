@@ -4,7 +4,6 @@ import sqlite3
 import json
 import os
 import os.path
-import sys
 import re
 from operator import itemgetter
 
@@ -15,7 +14,7 @@ from PyQt5.Qt import QDialog, QWebEngineView, QVBoxLayout
 from PyQt5.Qt import QTextEdit, QDialogButtonBox, QColor, QMessageBox, QFileDialog
 from PyQt5.Qt import QInputDialog, Qt, QListWidgetItem
 
-from .utils import get_path, show_text, log, get_file_data
+from .utils import get_path, show_text, get_file_data
 from .relate import RelateToMyDocDialog
 from .ui_load_feed import Ui_load_feed_dialog
 from .ui_note_type_setting import Ui_note_type_setting_dialog
@@ -994,6 +993,3 @@ def clean_missing_file_subs():
         conn.close()
         show_text("Cleaned %d missing-file subs in DB" % len(to_del_subs_list))
 
-
-def my_test():
-    pass

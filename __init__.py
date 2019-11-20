@@ -1,8 +1,8 @@
 #-*- coding:utf-8 -*-
 #
-# Copyright (C) 2018 sthoo <sth201807@gmail.com>
 #
-# Support: Report an issue at https://github.com/sth2018/FastWordQuery/issues
+# Support: Report an issue at https://github.com/tosimplicity/AnkiRelateToMyDoc/issues
+#
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,9 +16,8 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
-# from . import myRes_rc
 
-__version__ = "0.51"
+__version__ = "0.52"
 __license__ = "GNU Affero General Public License, version 3 or later"
 
 import ssl
@@ -34,9 +33,8 @@ from .main import load_feed
 from .main import set_note_type_to_relate
 from .main import view_doc
 from .main import set_pic_dir
-from .main import my_test
 from .main import load_media_subs, export_media_subs_list, clean_missing_file_subs
-from .utils import log, show_text, get_path
+from .utils import show_text, get_path
 from . import myRes_rc
 
 sys.dont_write_bytecode = True

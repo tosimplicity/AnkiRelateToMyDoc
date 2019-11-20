@@ -1,6 +1,5 @@
 import os.path
 import time, datetime
-import logging
 import codecs
 
 from aqt import mw
@@ -53,10 +52,6 @@ def html_to_text(html):
     # drop blank lines
     text = '\n'.join(chunk for chunk in chunks if chunk)
     return text
-
-
-def log(*args):
-    return logging.getLogger(__name__).info(*args)
 
 
 def detect_by_bom(path, default="utf-8"):

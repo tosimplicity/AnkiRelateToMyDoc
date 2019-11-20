@@ -7,7 +7,6 @@ import  random
 from anki.hooks import addHook, runHook
 from anki.utils import  tmpdir, isWin, isMac, isLin
 from aqt import mw
-from .utils import log
 
 # Packaged commands
 ##########################################################################
