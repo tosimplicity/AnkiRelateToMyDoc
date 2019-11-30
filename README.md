@@ -3,6 +3,7 @@
 
 
 ![](screenshots/main.png)
+![](screenshots/video_example.png)
 
 ## Quick Start Guide:
 0. Installation: https://ankiweb.net/shared/info/143084803
@@ -35,6 +36,10 @@
 4. Beautiful Soup is packaged inside unchanged. Link: http://www.crummy.com/software/BeautifulSoup/
 
 ## Version History
+
+Version 0.52 @2019-11-20
+- remove useless code block
+- correct player duration setting
 
 Version 0.51
 - add rmvb as video extension
