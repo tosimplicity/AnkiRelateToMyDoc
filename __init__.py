@@ -17,7 +17,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-__version__ = "0.52"
+__version__ = "0.53"
 __license__ = "GNU Affero General Public License, version 3 or later"
 
 import ssl
@@ -49,6 +49,7 @@ For audio, only *.mp3 file would be searched.
 For video, search first found: *.mp4, *.mkv, *.avi, *.flv, *.m4v, *.f4v, *.rmvb
 (MPlayer can play files in many more formats. But you need to change extension for add-on to search.
 Like changing example.rmvb to example.avi)
+*** mplayer volume can be set in config with key "mplayer_startup_volume"
 *** Load Sub: The Subs file will be loaded into local db if media file is found.
 *** Load Sub: If an old Sub exists, it will get replaced
 *** Clean Subs DB vs Media Files: check if media file in the fisrt found path exists. if not, remove the sub in DB.

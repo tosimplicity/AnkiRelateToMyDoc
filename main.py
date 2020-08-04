@@ -10,9 +10,10 @@ from operator import itemgetter
 from . import feedparser
 from aqt import mw
 from PyQt5.Qt import *
-from PyQt5.Qt import QDialog, QWebEngineView, QVBoxLayout
+from PyQt5.Qt import QDialog, QVBoxLayout, QPushButton
 from PyQt5.Qt import QTextEdit, QDialogButtonBox, QColor, QMessageBox, QFileDialog
 from PyQt5.Qt import QInputDialog, Qt, QListWidgetItem
+from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from .utils import get_path, show_text, get_file_data
 from .relate import RelateToMyDocDialog
@@ -44,12 +45,19 @@ class LoadFeedDialog(QDialog, Ui_load_feed_dialog):
 
         super().__init__(parent)
         self.setupUi(self)
+        self.load_feed_button.setText('Load All Feeds')
+        self.remove_feed_content_button = QPushButton('Clear Feed Content')
+        icon1 = QIcon()
+        icon1.addPixmap(QPixmap(":/res/res/remove.png"), QIcon.Normal, QIcon.On)
+        self.remove_feed_content_button.setIcon(icon1)
+        self.action_buttons.insertWidget(2, self.remove_feed_content_button)
         self.progressBar.hide()
 
         self.manual_input_button.clicked.connect(self.manual_input)
         self.load_text_button.clicked.connect(self.load_from_text_file)
         self.add_feed_button.clicked.connect(self.add_feed)
         self.remove_feed_button.clicked.connect(self.remove_feed)
+        self.remove_feed_content_button.clicked.connect(self.remove_feed_content)
         self.load_feed_button.clicked.connect(self.load_from_feed)
         self.abort_button.clicked.connect(self.abort_actions)
         self.clean_aged_button.clicked.connect(self.clean_aged_data)
@@ -250,6 +258,31 @@ class LoadFeedDialog(QDialog, Ui_load_feed_dialog):
             self.feed_address_list.pop(row_item)
             self.status_label.setText(str(row_item))
             self.feed_list_ui.takeItem(self.feed_list_ui.row(item))
+
+    def remove_feed_content(self):
+        for i in range(len(self.feed_address_list)):
+            self.feed_list_ui.item(i).setData(Qt.BackgroundRole, None)
+        for item in self.feed_list_ui.selectedItems():
+            row_item = self.feed_list_ui.row(item)
+            feed_id = self.feed_id_list[row_item]
+            feed_address = self.feed_address_list[row_item]
+            if feed_address != self.feed_list_ui.item(row_item).text():
+                QMessageBox(QMessageBox.Warning,
+                            "Warning",
+                            "Inconsist data, restart the load feed dialog before removal"
+                            ).exec()
+                return
+            conn = sqlite3.connect(get_path("user_files", "doc.db"),
+                                   detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
+            # clear favorites
+            conn.execute(
+                "delete from words where doc_id in "
+                + "(select doc_id from doc where feed_id = ?)",
+                (feed_id,))
+            # clear docs
+            conn.execute("delete from doc where feed_id = ?", (feed_id,))
+            conn.commit()
+            conn.close()
 
     def load_from_feed(self):
         """get feed data and store in doc db"""

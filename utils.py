@@ -5,7 +5,7 @@ import codecs
 from aqt import mw
 from PyQt5.Qt import QMessageBox
 
-from .bs4 import BeautifulSoup
+from bs4 import BeautifulSoup
 
 
 def get_path(*args):
@@ -29,7 +29,7 @@ def show_text(text):
 def html_to_text(html):
 
     try:
-        soup = BeautifulSoup(html, 'lxml')
+        soup = BeautifulSoup(html, 'lxml', features="html.parser")
         # kill all script and style elements
         for script in soup(["script", "style"]):
             script.extract()    # rip it out
@@ -37,7 +37,7 @@ def html_to_text(html):
         text = soup.get_text()
     except:
         try:
-            soup = BeautifulSoup(html, 'html')
+            soup = BeautifulSoup(html, 'html', features="html.parser")
             # kill all script and style elements
             for script in soup(["script", "style"]):
                 script.extract()    # rip it out

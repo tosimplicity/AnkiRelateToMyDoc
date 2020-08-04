@@ -6,10 +6,12 @@ import logging
 import os
 import os.path
 import re
+from functools import partial
 
 from aqt import mw
 from PyQt5.Qt import *
-from PyQt5.Qt import QDialog, QWebEngineView, QIcon, QPixmap
+from PyQt5.Qt import QDialog, QIcon, QPixmap
+from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from .utils import get_path, show_text, html_to_text
 from .ui_relate_to_my_doc import Ui_relate_to_my_doc_dialog
@@ -42,6 +44,7 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         self.fav_filter_checkbox.setChecked(True)
         self.unfav_filter_checkbox.setChecked(True)
         # slots
+        self.browser.loadFinished.connect(self.on_html_loaded)
         self.prev_doc_button.clicked.connect(self.show_previous_doc)
         self.next_doc_button.clicked.connect(self.show_next_doc)
         self.mark_fav_doc_button.clicked.connect(self.mark_fav_doc)
@@ -69,7 +72,6 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
 
         self.media_link_label.setText("")
         self.mplayer_widget_container.setStyleSheet("background-color: black;")
-        self.wid_mplayer_container = int(self.mplayer_widget_container.winId())
         self.prev_media_button.clicked.connect(self.show_previous_media)
         self.play_again_button.clicked.connect(self.play_media_again)
         self.next_media_button.clicked.connect(self.show_next_media)
@@ -77,11 +79,10 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         self.unreg_media_button.clicked.connect(self.unreg_media)
 
         self.card = None
-        self.card_id = 0
-        self.model_id = ""
-        self.doc_tab_on_card_id = 0
-        self.pic_tab_on_card_id = 0
-        self.media_tab_on_card_id = 0
+        self.card_id = None
+        self.doc_tab_on_card_id = None
+        self.pic_tab_on_card_id = None
+        self.media_tab_on_card_id = None
 
         self.target_model_id_list = []
         conn = sqlite3.connect(get_path("user_files", "doc.db"))
@@ -94,17 +95,20 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         with open(get_path("bypass_list"), "r") as f:
             self.bypass_list = json.load(f)
 
-
     def on_tab_change(self, cur_tab_index):
 
         self.tabWidget.setCurrentIndex(cur_tab_index)
         if cur_tab_index != 2:
             mplayer_extended.stop()
-        if cur_tab_index == 0 and self.doc_tab_on_card_id != self.card_id:
+        if not self.card:
+            pass
+        elif cur_tab_index == 0 and self.doc_tab_on_card_id != self.card_id:
             self.show_doc_up_for_new_card()
-        elif cur_tab_index == 1 and self.pic_tab_on_card_id != self.card_id:
+        elif cur_tab_index == 1 and self.index_showing_pic == -1:
+            self.index_showing_pic = 0
             self.show_pic_up_for_new_card()
-        elif cur_tab_index == 2 and self.media_tab_on_card_id != self.card_id:
+        elif cur_tab_index == 2 and self.cur_index_media_rowid_list == -1:
+            self.cur_index_media_rowid_list = 0
             self.show_media_up_for_new_card()
 
     def closeEvent(self, event):
@@ -117,61 +121,76 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
 
     def refresh_new_card(self):
 
+        if not self.prep_new_card():
+            return
+        self.prep_pic_up_for_new_card()
+        self.index_showing_pic = -1
+        self.prep_media_up_for_new_card()
+        self.cur_index_media_rowid_list = -1
+        self.show()
+
         if self.tabWidget.currentIndex() == 0:
             self.show_doc_up_for_new_card()
         elif self.tabWidget.currentIndex() == 1:
+            self.index_showing_pic = 0
             self.show_pic_up_for_new_card()
-        else:
+        elif self.tabWidget.currentIndex() == 2:
+            self.cur_index_media_rowid_list = 0
             self.show_media_up_for_new_card()
 
     def prep_new_card(self):
 
         # check note type
-        self.card = mw.reviewer.card
-        self.card_id = self.card.id
-        self.model_id = str(mw.reviewer.card.note().mid)
-        if self.model_id not in self.target_model_id_list:
+        card = mw.reviewer.card
+        card_id = card.id
+        model_id = str(mw.reviewer.card.note().mid)
+        if model_id not in self.target_model_id_list:
             return False
-        self.original_words = self.card.note().fields[0]
+        original_words = card.note().fields[0]
         # remove words text after "|"
         # get card words
-        if "|" in self.original_words:
-            self.words_core = self.original_words[:self.original_words.find("|")].strip()
+        if "|" in original_words:
+            words_core = original_words[:original_words.find("|")].strip()
         else:
-            self.words_core = self.original_words.strip()
+            words_core = original_words.strip()
         # get rid of html codes
-        self.words_core = re.sub(r"\[.*?\]", "", self.words_core)  # remove media content
-        self.words_core = re.sub(r"&nbsp;", "", self.words_core)  # remove html space
-        self.words_core = re.sub(r"<.*?>", "", self.words_core)  # remove format mark
-        self.words_core = re.sub(r"{{.*?::(.*?)}}", r"\1", self.words_core)  # remove cloze mark
-        self.words_core = re.sub(r"\s+", r" ", self.words_core)  # replace multiple whitespaces to one space
+        words_core = re.sub(r"\[.*?\]", "", words_core)  # remove media content
+        words_core = re.sub(r"&nbsp;", "", words_core)  # remove html space
+        words_core = re.sub(r"<.*?>", "", words_core)  # remove format mark
+        words_core = re.sub(r"{{.*?::(.*?)}}", r"\1", words_core)  # remove cloze mark
+        words_core = re.sub(r"\s+", r" ", words_core)  # replace multiple whitespaces to one space
         # handle words alternatives (ir, +ing, +s/es, +ed)
-        if " " in self.words_core:
-            words_core_first = self.original_words[:self.original_words.find(" ")]
-            words_core_trailing = self.original_words[self.original_words.find(" "):].strip()
+        if " " in words_core:
+            words_core_first = original_words[:original_words.find(" ")]
+            words_core_trailing = original_words[original_words.find(" "):].strip()
         else:
-            words_core_first = self.words_core
+            words_core_first = words_core
             words_core_trailing = ""
         if words_core_trailing:
-            self.words_core = words_core_first + " " + words_core_trailing
-        self.words_vars = [self.words_core, ]
+            words_core = words_core_first + " " + words_core_trailing
+        words_vars = [words_core, ]
         if words_core_first.lower() in self.ir_verb_dict:
             for ir_verb_var in self.ir_verb_dict[words_core_first.lower()]:
-                self.words_vars.append((ir_verb_var + " " + words_core_trailing).strip())
+                words_vars.append((ir_verb_var + " " + words_core_trailing).strip())
         if words_core_first.lower().endswith("e"):
-            self.words_vars.append((words_core_first[:-1] + "ing" + " " + words_core_trailing).strip())
-            self.words_vars.append((words_core_first + "s" + " " + words_core_trailing).strip())
-            self.words_vars.append((words_core_first[:-1] + "d" + " " + words_core_trailing).strip())
+            words_vars.append((words_core_first[:-1] + "ing" + " " + words_core_trailing).strip())
+            words_vars.append((words_core_first + "s" + " " + words_core_trailing).strip())
+            words_vars.append((words_core_first[:-1] + "d" + " " + words_core_trailing).strip())
         else:
-            self.words_vars.append((words_core_first + "ing" + " " + words_core_trailing).strip())
-            self.words_vars.append((words_core_first + "s" + " " + words_core_trailing).strip())
-            self.words_vars.append((words_core_first + "es" + " " + words_core_trailing).strip())
-            self.words_vars.append((words_core_first + "d" + " " + words_core_trailing).strip())
-            self.words_vars.append((words_core_first + "ed" + " " + words_core_trailing).strip())
+            words_vars.append((words_core_first + "ing" + " " + words_core_trailing).strip())
+            words_vars.append((words_core_first + "s" + " " + words_core_trailing).strip())
+            words_vars.append((words_core_first + "es" + " " + words_core_trailing).strip())
+            words_vars.append((words_core_first + "d" + " " + words_core_trailing).strip())
+            words_vars.append((words_core_first + "ed" + " " + words_core_trailing).strip())
         # check bypass words
-        if not self.words_core or self.words_core.lower() in self.bypass_list or '"' in self.words_core:
+        if not words_core or words_core.lower() in self.bypass_list or '"' in words_core:
             return False
 
+        self.card = card
+        self.card_id = card_id
+        self.original_words = original_words
+        self.words_core = words_core
+        self.words_vars = words_vars
         return True
 
 
@@ -180,10 +199,6 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
     #
 
     def show_doc_up_for_new_card(self):
-
-        if not self.prep_new_card():
-            return
-        self.show()
 
         self.fav_doc_id_queue = []
         self.unfav_doc_id_queue = []
@@ -276,7 +291,7 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
                                     self.cur_doc_id = row[0]
                                     link = row[2]
                                     self.unfav_doc_id_queue.append(self.cur_doc_id)
-                                    if str(self.cur_doc_id) not in self.words_var_by_doc_id:
+                                    if self.cur_doc_id not in self.words_var_by_doc_id:
                                         self.words_var_by_doc_id[self.cur_doc_id] = words_var
                                     found_flag = True
                                     break
@@ -332,6 +347,12 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
             icon.addPixmap(QPixmap(":/res/res/grey_heart.png"), QIcon.Normal, QIcon.On)
         self.mark_fav_doc_button.setIcon(icon)
         self.show()
+
+    def on_html_loaded(self, ok):
+        try:
+            self.browser.findText(self.words_var_by_doc_id[self.cur_doc_id])
+        except Exception:
+            pass
 
     def on_filter_change(self, filter_name="favorite"):
         if filter_name not in ("favorite", "others"):
@@ -453,6 +474,7 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
                     self.cur_doc_id = 0
             self.render_page_as_filtered()
 
+
     def mark_fav_doc(self):
         if not self.doc_tab_on_card_id:
             return
@@ -522,19 +544,13 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
     # work on the pic tab
     #
 
-    def show_pic_up_for_new_card(self):
-
-        if not self.prep_new_card():
-            return
-        self.show()
-
+    def prep_pic_up_for_new_card(self):
+        # self.index_showing_pic = 0
         # generate picture pool
         # only done once at the fist visit to the tab
-        if not self.pic_tab_on_card_id:
+        if self.pic_tab_on_card_id is None:
             config = mw.addonManager.getConfig(__name__)
             pic_dir_list = config["directory_list_for_pics_to_relate"]
-            if not pic_dir_list:
-                return
             self.pic_pool = {}
             for pic_dir in pic_dir_list:
                 if not os.path.isdir(pic_dir):
@@ -556,8 +572,6 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
                             pics.append(filename)
                 if pics:
                     self.pic_pool[pic_dir] = pics
-            if not self.pic_pool:
-                return
 
         self.related_pic_list = []
         for pic_dir in self.pic_pool.keys():
@@ -569,11 +583,16 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         if not self.related_pic_list:
             self.pic_link_label.setText("")
             self.pic_label.clear()
-            return
 
-        self.index_showing_pic = 0
-        self.show_pic()
+        self.tabWidget.setTabText(
+            self.tabWidget.indexOf(self.pic_tab),
+            "Picture(" + str(len(self.related_pic_list)) + ")")
         self.pic_tab_on_card_id = self.card_id
+
+    def show_pic_up_for_new_card(self):
+        if self.pic_tab_on_card_id != self.card_id:
+            self.prep_pic_up_for_new_card()
+        self.show_pic()
 
     def show_pic(self):
 
@@ -602,10 +621,16 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
             self.prev_pic_button.setEnabled(False)
         else:
             self.prev_pic_button.setEnabled(True)
-        if self.index_showing_pic == len(self.related_pic_list) - 1:
+        if self.index_showing_pic >= len(self.related_pic_list) - 1:
             self.next_pic_button.setEnabled(False)
         else:
             self.next_pic_button.setEnabled(True)
+
+        total = str(len(self.related_pic_list))
+        cur = str(self.index_showing_pic + 1) if total != "0" else "0"
+        self.tabWidget.setTabText(
+            self.tabWidget.indexOf(self.pic_tab),
+            "Picture(" + cur + "/" + total + ")")
         self.show()
 
     def show_previous_pic(self):
@@ -627,11 +652,7 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
     # work on the media tab
     #
 
-    def show_media_up_for_new_card(self):
-
-        if not self.prep_new_card():
-            return
-        self.show()
+    def prep_media_up_for_new_card(self):
         # generate media pool
         # only done once at the fist visit to the tab
         sql_script = ('select rowid, media_path_no_ext from subs '
@@ -653,7 +674,7 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
                     continue
             self.media_rowid_list.append(row[0])
         conn.close()
-        self.cur_index_media_rowid_list = 0
+        # self.cur_index_media_rowid_list = 0
         # cur_sub [media_path_no_ext, media_ext, sub_text, is_fav]
         self.cur_sub = []
         # cur_sub_details [[start, end, line content], next, next, ...]
@@ -665,9 +686,16 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         if not self.media_rowid_list:
             self.prev_media_button.setEnabled(False)
             self.next_media_button.setEnabled(False)
-            return
-        self.show_media()
+
+        self.tabWidget.setTabText(
+            self.tabWidget.indexOf(self.media_tab),
+            "Multimedia(" + str(len(self.media_rowid_list)) + ")")
         self.media_tab_on_card_id = self.card_id
+
+    def show_media_up_for_new_card(self):
+        if self.media_tab_on_card_id != self.card_id:
+            self.prep_media_up_for_new_card()
+        self.show_media()
 
     def show_media(self):
 
@@ -783,7 +811,18 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         self.mark_fav_media_button.setIcon(icon)
         self.media_play_para = [self.cur_sub[0] + self.cur_sub[1], start, end]
         mplayer_extended.stop()
+        mplayer_extended.setup(int(self.mplayer_widget_container.winId()))
+        # logger = logging.getLogger(__name__)
+        # logger.info(
+        #     'mplayer_widget_container wid '
+        #     + str(int(self.mplayer_widget_container.winId())))
         mplayer_extended.play(self.media_play_para[0], self.media_play_para[1], self.media_play_para[2])
+
+        total = str(len(self.media_rowid_list))
+        cur = str(self.cur_index_media_rowid_list + 1) if total != "0" else "0"
+        self.tabWidget.setTabText(
+            self.tabWidget.indexOf(self.media_tab),
+            "Multimedia(" + cur + "/" + total + ")")
         self.show()
         return "ok"
 
@@ -833,6 +872,11 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         if not self.media_play_para:
             return
         mplayer_extended.stop()
+        mplayer_extended.setup(int(self.mplayer_widget_container.winId()))
+        # logger = logging.getLogger(__name__)
+        # logger.info(
+        #     'mplayer_widget_container wid '
+        #     + str(int(self.mplayer_widget_container.winId())))
         mplayer_extended.play(self.media_play_para[0], self.media_play_para[1], self.media_play_para[2])
 
     def mark_fav_media(self):
@@ -876,4 +920,6 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         conn.execute("delete from subs where rowid = ?", (rowid_to_delete, ))
         conn.commit()
         conn.close()
+        self.prep_media_up_for_new_card()
+        self.cur_index_media_rowid_list = 0
         self.show_media_up_for_new_card()

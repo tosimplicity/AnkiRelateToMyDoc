@@ -60,6 +60,8 @@ mplayerManager = None
 mplayerReader = None
 mplayerEvt = threading.Event()
 mplayerClear = False
+wid_mplayer_container = 0
+
 
 class MplayerMonitor(threading.Thread):
 
@@ -117,7 +119,10 @@ class MplayerMonitor(threading.Thread):
                     return False
                 else:
                     return True
-            self.deadPlayers = [pl for pl in self.deadPlayers if clean(pl)]
+            self.deadPlayers = [
+                pl for pl in self.deadPlayers
+                if pl is not None and clean(pl)
+            ]
 
     def kill(self):
         if not self.mplayer:
@@ -132,8 +137,17 @@ class MplayerMonitor(threading.Thread):
 
     def startProcess(self):
         try:
-            cmd = mplayerCmd + ["-slave", "-idle"]
-            wid_mplayer_container = mw.addon_RTMD.relate_to_my_doc_dialog.wid_mplayer_container
+            global wid_mplayer_container
+            if not wid_mplayer_container:
+                return
+            try:
+                config = mw.addonManager.getConfig(__name__)
+                volume = int(config["mplayer_startup_volume"])
+            except Exception:
+                volume = 50
+            if volume < 0 or volume > 100:
+                volume = 50
+            cmd = mplayerCmd + ["-volume", str(volume), "-slave", "-idle"]
             #cmd = [cmd[0], "-fs", "-wid", str(wid_mplayer_container)] + cmd[1:]
             try:
                 cmd += ["-fs", "-wid", str(wid_mplayer_container)]
@@ -223,9 +237,16 @@ addHook("unloadProfile", stopMplayer)
 
 # interface
 ##########################################################################
+def setup(wid=0):
+    global wid_mplayer_container
+    if wid_mplayer_container != wid:
+        stopMplayer()
+    wid_mplayer_container = wid
+
 
 def play(path, start_sec=0, end_sec=0):
     queueMplayer(path, start_sec, end_sec)
+
 
 def stop():
     clearMplayerPlaying()
