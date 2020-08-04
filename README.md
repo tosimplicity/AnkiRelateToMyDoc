@@ -3,7 +3,6 @@
 
 
 ![](screenshots/main.png)
-![](screenshots/video_example.png)
 
 ## Quick Start Guide:
 0. Installation: https://ankiweb.net/shared/info/143084803
@@ -33,9 +32,13 @@
 1. Source code can be found on https://github.com/tosimplicity/AnkiRelateToMyDoc
 2. This add-on is licensed under GPL v3, or higher
 3. FeedParser is packaged inside unchanged. Link: https://github.com/kurtmckee/feedparser
-4. Beautiful Soup is packaged inside unchanged. Link: http://www.crummy.com/software/BeautifulSoup/
 
 ## Version History
+
+Version 0.53 @2020-08-04
+- add pic/video count on tab
+- make mplayer playing more stable
+- update according to higher anki version
 
 Version 0.52 @2019-11-20
 - remove useless code block
