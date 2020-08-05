@@ -661,12 +661,19 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
                       + 'order by is_fav desc, folder_name asc, media_path_no_ext asc')
         conn = sqlite3.connect(get_path("user_files", "doc.db"))
         self.media_rowid_list = []
+        config = mw.addonManager.getConfig(__name__)
+        try:
+            if config["filter_show_local_file_path_not_start_with"]["is_active"]:
+                flag_filters = config["filter_show_local_file_path_not_start_with"]["filter"]
+            else:
+                flag_filters = None
+        except KeyError:
+            flag_filters = None
         for row in conn.execute(sql_script):
             config = mw.addonManager.getConfig(__name__)
-            if "filter_show_local_file_path_not_start_with" in config \
-                    and config["filter_show_local_file_path_not_start_with"]["is_active"]:
+            if flag_filters:
                 flag_filter_fit = False
-                for each_filter in config["filter_show_local_file_path_not_start_with"]["filter"]:
+                for each_filter in flag_filters:
                     if os.path.normpath(row[1]).replace("\\", "/").lower().startswith(os.path.normpath(each_filter).replace("\\", "/").lower()):
                         flag_filter_fit = True
                         break
