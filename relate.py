@@ -143,7 +143,7 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         # check note type
         card = mw.reviewer.card
         card_id = card.id
-        model_id = str(mw.reviewer.card.note().mid)
+        model_id = mw.reviewer.card.note().mid
         if model_id not in self.target_model_id_list:
             return False
         original_words = card.note().fields[0]

@@ -5,6 +5,8 @@ import json
 import os
 import os.path
 import re
+import logging
+import urllib
 from operator import itemgetter
 
 from . import feedparser
@@ -21,6 +23,7 @@ from .ui_load_feed import Ui_load_feed_dialog
 from .ui_note_type_setting import Ui_note_type_setting_dialog
 from .ui_set_pic_dir import Ui_set_pic_dir_dialog
 from .ui_view_doc import Ui_view_doc_dialog
+
 
 def relate_to_my_doc():
     if hasattr(mw.addon_RTMD.load_feed_dialog, "hard_work") and mw.addon_RTMD.load_feed_dialog.hard_work:
@@ -325,22 +328,47 @@ class LoadFeedDialog(QDialog, Ui_load_feed_dialog):
                 self.parent.feed_list_ui.item(self.item_no).setData(Qt.BackgroundRole, None)
                 conn = sqlite3.connect(get_path("user_files", "doc.db"))
                 cur = conn.cursor()
-                cur.execute("select fetch_mod_text from feed where feed_id = ?", (feed_id,))
-                fetch_mod_text = cur.fetchone()[0]
+                cur.execute("select fetch_mod_date from feed where feed_id = ?", (feed_id,))
+                fetch_mod_date = cur.fetchone()[0]
+                if isinstance(fetch_mod_date, str):
+                    try:
+                        fetch_mod_date = datetime.datetime.fromisoformat()
+                    except Exception:
+                        fetch_mod_date = None
                 conn.close()
-                if fetch_mod_text:
-                    feed = feedparser.parse(address, modified=fetch_mod_text)
-                else:
-                    feed = feedparser.parse(address)
-                # check if to abort #2
-                if self.parent.need_abort:
-                    self.signals.error_message.emit("")
-                    return
-                if not hasattr(feed, "status") or feed.status == 410:
+
+                if not fetch_mod_date:
+                    fetch_mod_date = datetime.datetime.now() - datetime.timedelta(days=1)
+                agent = 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.132 Safari/537.36'
+                modified = fetch_mod_date.utctimetuple()
+                short_weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+                months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                since = '%s, %02d %s %04d %02d:%02d:%02d GMT' % (short_weekdays[modified[6]], modified[2], months[modified[1] - 1], modified[0], modified[3], modified[4], modified[5])
+                #print('since', since)
+                accept = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9'
+                headers = {}
+                headers = {'A-IM': 'feed'}
+                headers['User-Agent'] = agent
+                headers['If-Modified-Since'] = since
+                headers['accept'] = accept
+                # headers['Accept-encoding'] = 'gzip, deflate'
+                try:
+                    page = urllib.request.Request(address, headers=headers)
+                    html = urllib.request.urlopen(page, timeout=10).read().decode("utf-8")
+                    if self.parent.need_abort:
+                        self.signals.error_message.emit("")
+                        return
+                    feed = feedparser.parse(html)
+                except Exception:
                     self.parent.feed_list_ui.item(self.item_no).setBackground(QColor("red"))
                     error_message = "Failed to get from %s\n" % address
                     self.signals.error_message.emit(error_message)
                     return
+                # if fetch_mod_text:
+                #     feed = feedparser.parse(address, modified=fetch_mod_text)
+                # else:
+                #     feed = feedparser.parse(address)
+                # check if to abort #2
 
                 # get data at feed level
                 fetch_mod_text = getattr(feed, "modified", "")
@@ -430,7 +458,7 @@ class LoadFeedDialog(QDialog, Ui_load_feed_dialog):
         def load_error_msg_slot(signal_error_msg):
             self.load_feed_completed_thread_count += 1
             if signal_error_msg:
-                self.load_feed_error_message += signal_error_msg + "<p>"
+                self.load_feed_error_message += signal_error_msg + "\n"
             self.status_label.setText("Completed feed %s / %s"
                                       % (self.load_feed_completed_thread_count,
                                          len(self.feed_address_list)))
@@ -469,9 +497,9 @@ class LoadFeedDialog(QDialog, Ui_load_feed_dialog):
         config = mw.addonManager.getConfig(__name__)
         doc_aged_def = int(config["clean_normal_docs_over_n_days"])
         doc_aged_fav_def = int(config["clean_favorite_docs_over_n_days"])
-        if doc_aged_def < 100 or doc_aged_fav_def < 100:
-            show_text("Days threshold to clean data should be above 100.")
-            return
+        # if doc_aged_def < 100 or doc_aged_fav_def < 100:
+        #     show_text("Days threshold to clean data should be above 100.")
+        #     return
         now = datetime.datetime.now()
         aged_date_normal = now - datetime.timedelta(days=doc_aged_def)
         aged_date_fav = now - datetime.timedelta(days=doc_aged_fav_def)
