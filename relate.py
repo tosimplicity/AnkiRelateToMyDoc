@@ -658,7 +658,7 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         sql_script = ('select rowid, media_path_no_ext from subs '
                       + 'where sub_text like "%'
                       + '%" or sub_text like "%'.join(self.words_vars) + '%" '
-                      + 'order by is_fav desc, folder_name asc, media_path_no_ext asc')
+                      + 'order by is_fav desc, media_path_no_ext asc')
         conn = sqlite3.connect(get_path("user_files", "doc.db"))
         self.media_rowid_list = []
         config = mw.addonManager.getConfig(__name__)
@@ -792,8 +792,12 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
                 else:
                     end = max(end + 2 * MEDIA_BLOCK_TIME, self.cur_sub_details[pointer + 1][0])
             line_after_text = self.cur_sub_details[pointer + 1][2]
-
-        self.media_link_label.setText(os.path.normpath(self.cur_sub[0] + self.cur_sub[1]))
+        # get start time string
+        _ = int(start)
+        _,  second = _ // 60, _ % 60
+        hour, minute = _ // 60, _ % 60
+        start_str = '%d:%02d:%02d ' % (hour, minute, second)
+        self.media_link_label.setText(start_str + os.path.normpath(self.cur_sub[0] + self.cur_sub[1]))
         self.media_text_listWidget.clear()
         self.media_text_listWidget.addItem(line_before_text)
         self.media_text_listWidget.addItem(line_text)
