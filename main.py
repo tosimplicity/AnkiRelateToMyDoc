@@ -23,9 +23,9 @@ from .ui_load_feed import Ui_load_feed_dialog
 from .ui_note_type_setting import Ui_note_type_setting_dialog
 from .ui_set_pic_dir import Ui_set_pic_dir_dialog
 from .ui_view_doc import Ui_view_doc_dialog
+from . import mplayer_extended
 
-
-def relate_to_my_doc():
+def relate_to_my_doc(card=None):
     if hasattr(mw.addon_RTMD.load_feed_dialog, "hard_work") and mw.addon_RTMD.load_feed_dialog.hard_work:
         if not mw.addon_RTMD.silent_for_new_card:
             show_text("Wait for load-feed-dialog to complete its job first.")
@@ -39,8 +39,14 @@ def relate_to_my_doc():
     mw.addon_RTMD.silent_for_new_card = False
     if not mw.addon_RTMD.relate_to_my_doc_dialog:
         mw.addon_RTMD.relate_to_my_doc_dialog = RelateToMyDocDialog(mw)
-    mw.addon_RTMD.relate_to_my_doc_dialog.refresh_new_card()
+    mw.addon_RTMD.relate_to_my_doc_dialog.refresh_new_card(card)
 
+def stop_media_playing():
+    mplayer_extended.stop()
+    try:
+        mw.addon_RTMD.relate_to_my_doc_dialog.stop_media_playing()
+    except Exception:
+        pass
 
 class LoadFeedDialog(QDialog, Ui_load_feed_dialog):
 

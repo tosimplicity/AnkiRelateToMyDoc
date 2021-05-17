@@ -28,7 +28,7 @@ from aqt import mw
 from PyQt5.Qt import *
 import logging
 from .logging_handlers import TimedRotatingFileHandler
-from .main import relate_to_my_doc
+from .main import relate_to_my_doc, stop_media_playing
 from .main import load_feed
 from .main import set_note_type_to_relate
 from .main import view_doc
@@ -77,8 +77,6 @@ class AnkiRelateToMyDoc(object):
             self.view_doc_dialog.close()
         if self.set_pic_dir_dialog:
             self.set_pic_dir_dialog.close()
-
-mw.addon_RTMD = AnkiRelateToMyDoc(mw)
 
 
 def set_up_addon():
@@ -149,18 +147,22 @@ def set_up_addon():
     action.triggered.connect(lambda: show_text(instructions_media_op))
     subMenu.addAction(action)
 
+    config = mw.addonManager.getConfig(__name__)
+    if "sync_feed_on_start" in config and config["sync_feed_on_start"]:
+        load_feed()
+        mw.addon_RTMD.load_feed_dialog.load_from_feed()
+
     logger = logging.getLogger(__name__)
     f_handler = TimedRotatingFileHandler(
         get_path("user_files", "addon_log"), when='S', interval=60, backupCount=3, encoding="utf-8")
     f_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
     f_handler.setLevel(logging.DEBUG)
     logger.addHandler(f_handler)
-    logger.setLevel(logging.DEBUG)
+    if config.get('debug', False):
+        logger.setLevel(logging.DEBUG)
+    else:
+        logger.setLevel(logging.INFO)
 
-    config = mw.addonManager.getConfig(__name__)
-    if "sync_feed_on_start" in config and config["sync_feed_on_start"]:
-        load_feed()
-        mw.addon_RTMD.load_feed_dialog.load_from_feed()
 
 def close_addon():
 
@@ -172,7 +174,12 @@ def close_relate_dialog_on_leave(newState, oldstate, *args):
         if hasattr(mw.addon_RTMD, "relate_to_my_doc_dialog") and mw.addon_RTMD.relate_to_my_doc_dialog:
             mw.addon_RTMD.relate_to_my_doc_dialog.close()
 
+
+mw.addon_RTMD = AnkiRelateToMyDoc(mw)
+mw.addon_RTMD.relate_to_my_doc = relate_to_my_doc
+
 addHook("profileLoaded", set_up_addon)
 addHook("unloadProfile", close_addon)
 addHook('afterStateChange', close_relate_dialog_on_leave)
 addHook("showAnswer", relate_to_my_doc)
+addHook("showQuestion", stop_media_playing)

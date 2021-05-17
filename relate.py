@@ -11,6 +11,7 @@ from functools import partial
 from aqt import mw
 from PyQt5.Qt import *
 from PyQt5.Qt import QDialog, QIcon, QPixmap
+from PyQt5.Qt import QTimer
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
 from .utils import get_path, show_text, html_to_text
@@ -19,6 +20,8 @@ from . import mplayer_extended
 
 MEDIA_FADE_TIME = 2
 MEDIA_BLOCK_TIME = 10
+
+logger = logging.getLogger(__name__)
 
 
 class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
@@ -43,6 +46,9 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         self.verticalLayout_text.addWidget(self.browser)
         self.fav_filter_checkbox.setChecked(True)
         self.unfav_filter_checkbox.setChecked(True)
+        config = mw.addonManager.getConfig(__name__)
+        if config.get('media_show_ffmpeg_cut_script', None):
+            self.media_tab_vlayout.addWidget(self.ffmpeg_cut_script_label)
         # slots
         self.browser.loadFinished.connect(self.on_html_loaded)
         self.prev_doc_button.clicked.connect(self.show_previous_doc)
@@ -70,10 +76,11 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         self.prev_pic_button.clicked.connect(self.show_previous_pic)
         self.next_pic_button.clicked.connect(self.show_next_pic)
 
+        self.media_time_label.setText('')
         self.media_link_label.setText("")
         self.mplayer_widget_container.setStyleSheet("background-color: black;")
         self.prev_media_button.clicked.connect(self.show_previous_media)
-        self.play_again_button.clicked.connect(self.play_media_again)
+        self.toggle_media_button.clicked.connect(self.toggle_media)
         self.next_media_button.clicked.connect(self.show_next_media)
         self.mark_fav_media_button.clicked.connect(self.mark_fav_media)
         self.unreg_media_button.clicked.connect(self.unreg_media)
@@ -83,7 +90,17 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         self.doc_tab_on_card_id = None
         self.pic_tab_on_card_id = None
         self.media_tab_on_card_id = None
+        self.media_end_time = 0
 
+        __ = config.get(
+            'media_auto_play_under_inner_audio_qty', None)
+        if __ is None:
+            self.media_auto_play_under_inner_audio_qty = None
+        else:
+            try:
+                self.media_auto_play_under_inner_audio_qty = int(__)
+            except ValueError:
+                self.media_auto_play_under_inner_audio_qty = None
         self.target_model_id_list = []
         conn = sqlite3.connect(get_path("user_files", "doc.db"))
         for row in conn.execute('select var_value from var_store where var_name = "target_model_id_list"'):
@@ -100,6 +117,7 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         self.tabWidget.setCurrentIndex(cur_tab_index)
         if cur_tab_index != 2:
             mplayer_extended.stop()
+            self.media_end_time = 0
         if not self.card:
             pass
         elif cur_tab_index == 0 and self.doc_tab_on_card_id != self.card_id:
@@ -119,9 +137,13 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         # else:
         #     event.ignore()
 
-    def refresh_new_card(self):
+    def stop_media_playing(self):
+        mplayer_extended.stop()
+        self.media_end_time = 0
 
-        if not self.prep_new_card():
+    def refresh_new_card(self, card=None):
+
+        if not self.prep_new_card(card):
             return
         self.prep_pic_up_for_new_card()
         self.index_showing_pic = -1
@@ -138,12 +160,13 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
             self.cur_index_media_rowid_list = 0
             self.show_media_up_for_new_card()
 
-    def prep_new_card(self):
+    def prep_new_card(self, card):
 
         # check note type
-        card = mw.reviewer.card
+        if not card:
+            card = mw.reviewer.card
         card_id = card.id
-        model_id = mw.reviewer.card.note().mid
+        model_id = card.note().mid
         if model_id not in self.target_model_id_list:
             return False
         original_words = card.note().fields[0]
@@ -655,10 +678,10 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
     def prep_media_up_for_new_card(self):
         # generate media pool
         # only done once at the fist visit to the tab
-        sql_script = ('select rowid, media_path_no_ext from subs '
+        sql_script = ('select rowid, media_path_no_ext, fav_words_json from subs '
                       + 'where sub_text like "%'
                       + '%" or sub_text like "%'.join(self.words_vars) + '%" '
-                      + 'order by is_fav desc, media_path_no_ext asc')
+                      + 'order by media_path_no_ext asc')
         conn = sqlite3.connect(get_path("user_files", "doc.db"))
         self.media_rowid_list = []
         config = mw.addonManager.getConfig(__name__)
@@ -669,8 +692,9 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
                 flag_filters = None
         except KeyError:
             flag_filters = None
+        fav_list = []
+        non_fav_list = []
         for row in conn.execute(sql_script):
-            config = mw.addonManager.getConfig(__name__)
             if flag_filters:
                 flag_filter_fit = False
                 for each_filter in flag_filters:
@@ -679,7 +703,15 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
                         break
                 if flag_filter_fit:
                     continue
-            self.media_rowid_list.append(row[0])
+            try:
+                fav_words = json.loads(row[2]) or []
+            except Exception:
+                fav_words = []
+            if self.words_core in fav_words:
+                fav_list.append(row[0])
+            else:
+                non_fav_list.append(row[0])
+        self.media_rowid_list = fav_list + non_fav_list
         conn.close()
         # self.cur_index_media_rowid_list = 0
         # cur_sub [media_path_no_ext, media_ext, sub_text, is_fav]
@@ -697,23 +729,53 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         self.tabWidget.setTabText(
             self.tabWidget.indexOf(self.media_tab),
             "Multimedia(" + str(len(self.media_rowid_list)) + ")")
+        self.media_time_label.setText('0:00:00')
+        self.media_link_label.setText('')
+        self.media_text_listWidget.clear()
+        self.ffmpeg_cut_script_label.setText('')
+        mplayer_extended.stop()
+        self.media_end_time = 0
+
         self.media_tab_on_card_id = self.card_id
 
     def show_media_up_for_new_card(self):
         if self.media_tab_on_card_id != self.card_id:
             self.prep_media_up_for_new_card()
-        self.show_media()
+        # QTimer.singleShot(2000, self.show_media)
+        if self.media_auto_play_under_inner_audio_qty is None:
+            self.show_media()
+        else:
+            try:
+                tags = self.card.answer_av_tags()
+                if self.card.replay_question_audio_on_answer_side():
+                    tags = self.card.question_av_tags() + tags
+                av_tags_count = len(tags)
+            except AttributeError:
+                av_tags_count = None
+            if (
+                av_tags_count is not None and
+                av_tags_count <= self.media_auto_play_under_inner_audio_qty
+            ):
+                self.show_media(should_play=True)
+            else:
+                self.show_media()
 
-    def show_media(self):
+    def show_media(self, should_play=False):
 
         if self.cur_index_media_rowid_list < 0 \
                 or self.cur_index_media_rowid_list >= len(self.media_rowid_list):
             return "error"
+
         if not self.cur_sub:
             conn = sqlite3.connect(get_path("user_files", "doc.db"))
-            for row in conn.execute("select media_path_no_ext, media_ext, sub_text, is_fav from subs where rowid = ?",
+            for row in conn.execute("select media_path_no_ext, media_ext, sub_text, fav_words_json from subs where rowid = ?",
                                     (self.media_rowid_list[self.cur_index_media_rowid_list],)):
-                self.cur_sub = [x for x in row]
+                try:
+                    fav_words = json.loads(row[3]) or []
+                except Exception:
+                    fav_words = []
+                self.cur_sub = list(row)
+                self.cur_sub[3] = (self.words_core in fav_words)
                 break
             if not os.path.isfile(self.cur_sub[0] + self.cur_sub[1]):
                 # no. we don't won't want to delete that
@@ -797,7 +859,8 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         _,  second = _ // 60, _ % 60
         hour, minute = _ // 60, _ % 60
         start_str = '%d:%02d:%02d ' % (hour, minute, second)
-        self.media_link_label.setText(start_str + os.path.normpath(self.cur_sub[0] + self.cur_sub[1]))
+        self.media_time_label.setText(start_str)
+        self.media_link_label.setText(os.path.normpath(self.cur_sub[0] + self.cur_sub[1]))
         self.media_text_listWidget.clear()
         self.media_text_listWidget.addItem(line_before_text)
         self.media_text_listWidget.addItem(line_text)
@@ -820,14 +883,36 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         else:
             icon.addPixmap(QPixmap(":/res/res/grey_heart.png"), QIcon.Normal, QIcon.On)
         self.mark_fav_media_button.setIcon(icon)
+        config = mw.addonManager.getConfig(__name__)
+        if config.get('media_show_ffmpeg_cut_script', None):
+            duration = int(end - start)
+            _ = int(duration)
+            _,  second = _ // 60, _ % 60
+            hour, minute = _ // 60, _ % 60
+            duration_str = '%d:%02d:%02d ' % (hour, minute, second)
+            if self.cur_sub[1].lower() in ('.rmvb', '.rm'):
+                cut_video_format = '.mkv'
+            else:
+                cut_video_format =  self.cur_sub[1].lower()
+            ffmpeg_cut_script = (
+                'ffmpeg -i "{0}" -ss {1} -t {2} -q:a 0 -map a "{3}.mp3" && '
+                'ffmpeg -i "{0}" -ss {1} -t {2} -c copy "{3}{4}" && '
+                'ffmpeg -i "{0}" -ss {1} -frames:v 1 "{3}.png"'
+                ).format(self.cur_sub[0] + self.cur_sub[1], start_str, duration_str, self.words_core, cut_video_format)
+            self.ffmpeg_cut_script_label.setText(ffmpeg_cut_script)
+
         self.media_play_para = [self.cur_sub[0] + self.cur_sub[1], start, end]
         mplayer_extended.stop()
-        mplayer_extended.setup(int(self.mplayer_widget_container.winId()))
         # logger = logging.getLogger(__name__)
         # logger.info(
         #     'mplayer_widget_container wid '
         #     + str(int(self.mplayer_widget_container.winId())))
-        mplayer_extended.play(self.media_play_para[0], self.media_play_para[1], self.media_play_para[2])
+        if should_play:
+            mplayer_extended.setup(int(self.mplayer_widget_container.winId()))
+            mplayer_extended.play(self.media_play_para[0], self.media_play_para[1], self.media_play_para[2])
+            self.media_end_time = time.time() + self.media_play_para[2] - self.media_play_para[1]
+        else:
+            self.media_end_time = 0
 
         total = str(len(self.media_rowid_list))
         cur = str(self.cur_index_media_rowid_list + 1) if total != "0" else "0"
@@ -847,12 +932,12 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
             return
         if self.index_words_in_sub_pointers != 0:
             self.index_words_in_sub_pointers -= 1
-            self.show_media()
+            self.show_media(should_play=True)
             return
         elif self.cur_index_media_rowid_list != 0:
             self.cur_index_media_rowid_list -= 1
             self.cur_sub = []
-            self.show_media()
+            self.show_media(should_play=True)
 
     def show_next_media(self):
         if not self.media_tab_on_card_id:
@@ -865,16 +950,21 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
             return
         if self.index_words_in_sub_pointers != len(self.words_in_sub_pointers) - 1:
             self.index_words_in_sub_pointers += 1
-            self.show_media()
+            self.show_media(should_play=True)
             return
         elif self.cur_index_media_rowid_list != len(self.media_rowid_list) - 1:
             self.cur_index_media_rowid_list += 1
             self.cur_sub = []
-            result = self.show_media()
+            result = self.show_media(should_play=True)
             while result == "sub-next":
                 result = self.show_media()
 
-    def play_media_again(self):
+    def toggle_media(self):
+
+        if time.time() <= self.media_end_time:
+            mplayer_extended.stop()
+            self.media_end_time = 0
+            return
 
         if not self.media_tab_on_card_id:
             return
@@ -889,6 +979,7 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         #     'mplayer_widget_container wid '
         #     + str(int(self.mplayer_widget_container.winId())))
         mplayer_extended.play(self.media_play_para[0], self.media_play_para[1], self.media_play_para[2])
+        self.media_end_time = time.time() + self.media_play_para[2] - self.media_play_para[1]
 
     def mark_fav_media(self):
 
@@ -899,18 +990,31 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         if not self.cur_sub:
             return
         rowid = self.media_rowid_list[self.cur_index_media_rowid_list]
+        conn = sqlite3.connect(get_path("user_files", "doc.db"))
+        raw = conn.execute(
+            "select fav_words_json from subs where rowid = ?", (rowid,)
+            ).fetchone()[0]
+        if not raw:
+            fav_words = []
+        else:
+            try:
+                fav_words = json.loads(raw) or []
+            except Exception:
+                fav_words = []
         if self.cur_sub[3]:
-            conn = sqlite3.connect(get_path("user_files", "doc.db"))
-            conn.execute("update subs set is_fav = ? where rowid = ?", (False, rowid))
-            conn.commit()
-            conn.close()
+            try:
+                fav_words.remove(self.words_core)
+            except ValueError:
+                pass
             self.cur_sub[3] = False
         else:
-            conn = sqlite3.connect(get_path("user_files", "doc.db"))
-            conn.execute("update subs set is_fav = ? where rowid = ?", (True, rowid))
-            conn.commit()
-            conn.close()
+            if self.words_core not in fav_words:
+                fav_words.append(self.words_core)
             self.cur_sub[3] = True
+        raw = json.dumps(fav_words)
+        conn.execute("update subs set fav_words_json = ? where rowid = ?", (raw, rowid))
+        conn.commit()
+        conn.close()
         icon = QIcon()
         if self.cur_sub[3]:
             icon.addPixmap(QPixmap(":/res/res/red_heart.png"), QIcon.Normal, QIcon.On)
