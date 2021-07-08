@@ -13,7 +13,7 @@ from . import feedparser
 from aqt import mw
 from PyQt5.Qt import *
 from PyQt5.Qt import QDialog, QVBoxLayout, QPushButton
-from PyQt5.Qt import QTextEdit, QDialogButtonBox, QColor, QMessageBox, QFileDialog
+from PyQt5.Qt import QLineEdit, QTextEdit, QDialogButtonBox, QColor, QMessageBox, QFileDialog
 from PyQt5.Qt import QInputDialog, Qt, QListWidgetItem
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 
@@ -24,6 +24,7 @@ from .ui_note_type_setting import Ui_note_type_setting_dialog
 from .ui_set_pic_dir import Ui_set_pic_dir_dialog
 from .ui_view_doc import Ui_view_doc_dialog
 from . import mplayer_extended
+
 
 def relate_to_my_doc(card=None):
     if hasattr(mw.addon_RTMD.load_feed_dialog, "hard_work") and mw.addon_RTMD.load_feed_dialog.hard_work:
@@ -41,12 +42,14 @@ def relate_to_my_doc(card=None):
         mw.addon_RTMD.relate_to_my_doc_dialog = RelateToMyDocDialog(mw)
     mw.addon_RTMD.relate_to_my_doc_dialog.refresh_new_card(card)
 
+
 def stop_media_playing():
     mplayer_extended.stop()
     try:
         mw.addon_RTMD.relate_to_my_doc_dialog.stop_media_playing()
     except Exception:
         pass
+
 
 class LoadFeedDialog(QDialog, Ui_load_feed_dialog):
 
@@ -89,14 +92,18 @@ class LoadFeedDialog(QDialog, Ui_load_feed_dialog):
         self.status_label.setText("")
         edit_dialog = QDialog(self)
         verticalLayout = QVBoxLayout(edit_dialog)
+        title_input = QLineEdit('title here', edit_dialog)
         editor = QTextEdit(edit_dialog)
+        verticalLayout.addWidget(title_input)
         verticalLayout.addWidget(editor)
         buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         self.manual_input_text = ""
+        self.manual_input_title = ""
 
         def editor_accepted():
             if editor.toPlainText():
                 self.manual_input_text = editor.toHtml()
+                self.manual_input_title = title_input.text().strip()
             edit_dialog.close()
 
         def editor_rejected(): edit_dialog.close()
@@ -116,8 +123,9 @@ class LoadFeedDialog(QDialog, Ui_load_feed_dialog):
                 if doc_id not in existing_doc_id_list_part:
                     break
             cur.execute("""insert into doc
-                            (doc_id, descr, doc_type)
-                            values (?, ?, 'mi')""", (doc_id, self.manual_input_text))
+                            (doc_id, title, descr, doc_type)
+                            values (?, ?, ?, 'mi')""",
+                        (doc_id, self.manual_input_title, self.manual_input_text))
             conn.commit()
             conn.close()
             self.manual_input_text = ""
@@ -175,6 +183,7 @@ class LoadFeedDialog(QDialog, Ui_load_feed_dialog):
                         desc = desc.replace("</body>", link_to_set + "</body>")
                     else:
                         desc = desc + link_to_set
+                    title = os.path.basename(self.file_path)
                     conn = sqlite3.connect(get_path("user_files", "doc.db"),
                                            detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
                     cur = conn.cursor()
@@ -186,8 +195,9 @@ class LoadFeedDialog(QDialog, Ui_load_feed_dialog):
                             break
                     self.parent.existing_doc_id_list_part.append(doc_id)
                     cur.execute("""insert into doc
-                                (doc_id, link, descr, doc_type)
-                                values (?, ?, ?, 'tf')""", (doc_id, self.file_path, desc))
+                                (doc_id, link, title, descr, doc_type)
+                                values (?, ?, ?, ?, 'tf')""",
+                                (doc_id, self.file_path, title, desc))
                     conn.commit()
                     conn.close()
                     self.signals.exit_signal.emit("")

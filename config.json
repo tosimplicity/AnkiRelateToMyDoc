@@ -3,5 +3,9 @@
 	"clean_normal_docs_over_n_days": 300,
 	"clean_favorite_docs_over_n_days": 500,
 	"sync_feed_on_start": false,
-	"directory_list_for_pics_to_relate": []
+	"directory_list_for_pics_to_relate": [],
+	"media_show_ffmpeg_cut_script": false,
+	"send_ralated_info_over_http_to_acclang": true,
+	"media_auto_play_under_inner_audio_qty": null,
+	"disable_pdfscheck": false
 }

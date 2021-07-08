@@ -6,6 +6,7 @@ import logging
 import os
 import os.path
 import re
+import urllib
 from functools import partial
 
 from aqt import mw
@@ -44,6 +45,7 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         self.qweb_progress_bar.show()
         self.browser.setHtml("")
         self.verticalLayout_text.addWidget(self.browser)
+        self.verticalLayout_text.addStretch()
         self.fav_filter_checkbox.setChecked(True)
         self.unfav_filter_checkbox.setChecked(True)
         config = mw.addonManager.getConfig(__name__)
@@ -82,6 +84,7 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         self.prev_media_button.clicked.connect(self.show_previous_media)
         self.toggle_media_button.clicked.connect(self.toggle_media)
         self.next_media_button.clicked.connect(self.show_next_media)
+        self.ffmpeg_cut_script_button.clicked.connect(self.show_ffmpeg_cut_script)
         self.mark_fav_media_button.clicked.connect(self.mark_fav_media)
         self.unreg_media_button.clicked.connect(self.unreg_media)
 
@@ -91,6 +94,7 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         self.pic_tab_on_card_id = None
         self.media_tab_on_card_id = None
         self.media_end_time = 0
+        self.ffmpeg_cut_script = None
 
         __ = config.get(
             'media_auto_play_under_inner_audio_qty', None)
@@ -112,6 +116,19 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         with open(get_path("bypass_list"), "r") as f:
             self.bypass_list = json.load(f)
 
+        if config.get('disable_pdfscheck', False):
+            self.should_check_pdfs_db = False
+        elif os.path.isfile(get_path("user_files", "pdfs.sqlite")):
+            self.should_check_pdfs_db = True
+            self.pdfs_check_label = None
+        else:
+            self.should_check_pdfs_db = False
+
+        if config.get('send_ralated_info_over_http_to_acclang', None):
+            self.send_ralated_info_over_http_to_acclang = True
+        else:
+            self.send_ralated_info_over_http_to_acclang = False
+
     def on_tab_change(self, cur_tab_index):
 
         self.tabWidget.setCurrentIndex(cur_tab_index)
@@ -131,6 +148,10 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
 
     def closeEvent(self, event):
         mplayer_extended.stop()
+        try:
+            self.pdfs_check_label.close()
+        except Exception:
+            pass
         event.accept()
         # if self.tabWidget.currentIndex() == 0:
         #     event.accept()
@@ -160,8 +181,26 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
             self.cur_index_media_rowid_list = 0
             self.show_media_up_for_new_card()
 
+        if self.should_check_pdfs_db:
+            self._check_pdfs_db()
+
+        if self.send_ralated_info_over_http_to_acclang:
+            data = dict(
+                type='word',
+                word=urllib.parse.quote_plus(self.words_core))
+            data = urllib.parse.urlencode(data).encode()
+            req = urllib.request.Request(
+                'http://127.0.0.1:51234/acclang/word', data=data)
+            try:
+                urllib.request.urlopen(req, timeout=0.1)
+            except urllib.error.URLError:
+                # don't care about timeout
+                pass
+
+
     def prep_new_card(self, card):
 
+        self.ffmpeg_cut_script = None
         # check note type
         if not card:
             card = mw.reviewer.card
@@ -205,6 +244,12 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
             words_vars.append((words_core_first + "es" + " " + words_core_trailing).strip())
             words_vars.append((words_core_first + "d" + " " + words_core_trailing).strip())
             words_vars.append((words_core_first + "ed" + " " + words_core_trailing).strip())
+        if (
+            len(words_core_first) >= 3
+            and words_core_first.lower().endswith('y')
+        ):
+            words_vars.append((words_core_first[:-1] + "ies" + " " + words_core_trailing).strip())
+            words_vars.append((words_core_first[:-1] + "ied" + " " + words_core_trailing).strip())
         # check bypass words
         if not words_core or words_core.lower() in self.bypass_list or '"' in words_core:
             return False
@@ -216,6 +261,40 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         self.words_vars = words_vars
         return True
 
+    def _check_pdfs_db(self):
+        if not self.should_check_pdfs_db:
+            return
+        if not self.words_core:
+            return
+        word = '%{}%'.format(self.words_core)
+        conn = sqlite3.connect(get_path("user_files", "pdfs.sqlite"))
+        liuyizigen_results = []
+        picword_results = []
+        for row in conn.execute(
+            'select words, pages from liuyizigen where words like ?',
+            (word,)
+        ):
+            liuyizigen_results.append('{} {}'.format(*row))
+        pattern = r"[a-zA-Z0-9_']*{}[a-zA-Z0-9_']*".format(self.words_core)
+        for row in conn.execute(
+            'select text, page from picword where text like ?',
+            (word,)
+        ):
+            picword_results.append(
+                ' '.join(set(re.findall(pattern, row[0]))) + ' '
+                + str(row[1]) + ' '
+                + str(row[1] - 12))
+        conn.close()
+        text = 'LiuYiZiGen: {} || Picword: {}'.format(
+            ', '.join(liuyizigen_results),
+            ', '.join(picword_results))
+        try:
+            self.pdfs_check_label.setText(text)
+        except Exception:
+            self.pdfs_check_label = QLabel(text)
+            self.pdfs_check_label.setMinimumWidth(600)
+            self.pdfs_check_label.setWordWrap(True)
+        self.pdfs_check_label.show()
 
     #
     # work on the doc tab
@@ -251,8 +330,8 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         if not self.fav_filter_checkbox.isChecked() and not self.unfav_filter_checkbox.isChecked():
             self.fav_filter_checkbox.setChecked(True) and self.unfav_filter_checkbox.setChecked(True)
 
-        self.show_next_doc()
         self.doc_tab_on_card_id = self.card_id
+        self.show_next_doc()
 
     def render_page_as_filtered(self, only_notice=""):
 
@@ -268,6 +347,7 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         # only to show to a notice
         if only_notice:
             self.qweb_progress_bar.show()
+            self.doc_title_label.setText('')
             self.browser.setHtml(only_notice)
             self.browser_show_temp_text = True
             self.show()
@@ -278,13 +358,14 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         if self.cur_doc_id:
             conn = sqlite3.connect(get_path("user_files", "doc.db"))
             cur = conn.cursor()
-            row = cur.execute("select descr, link from doc where doc_id = ?", (self.cur_doc_id,)).fetchone()
+            row = cur.execute("select descr, link, title from doc where doc_id = ?", (self.cur_doc_id,)).fetchone()
             desc = row[0]
             link = row[1]
+            title = row[2]
             conn.close()
         # case 2 need to find new doc
         elif not self.found_all_docs and self.unfav_filter_checkbox.isChecked():
-            sql_script = ('select doc.doc_id, descr, link, words.words from doc left join words '
+            sql_script = ('select doc.doc_id, descr, link, words.words, title from doc left join words '
                           + 'on doc.doc_id = words.doc_id and words.words = ? '
                           + 'where (descr like "%'
                           + '%" or descr like "%'.join(self.words_vars) + '%") '
@@ -300,6 +381,7 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
                 if self.dig_depth_doc_id > row[0] or not self.dig_depth_doc_id:
                     self.dig_depth_doc_id = row[0]
                 desc = row[1]
+                title = row[4]
                 desc_plain = html_to_text(desc)
                 # desc_plain = desc
                 for words_var in self.words_vars:
@@ -340,6 +422,7 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         else:
             html_to_set = html_to_set + link_to_set
         self.qweb_progress_bar.show()
+        self.doc_title_label.setText(title)
         self.browser.setHtml(html_to_set)
         self.browser.findText(self.words_var_by_doc_id[self.cur_doc_id])
         self.browser_show_temp_text = False
@@ -858,7 +941,7 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
         _ = int(start)
         _,  second = _ // 60, _ % 60
         hour, minute = _ // 60, _ % 60
-        start_str = '%d:%02d:%02d ' % (hour, minute, second)
+        start_str = '%d:%02d:%02d' % (hour, minute, second)
         self.media_time_label.setText(start_str)
         self.media_link_label.setText(os.path.normpath(self.cur_sub[0] + self.cur_sub[1]))
         self.media_text_listWidget.clear()
@@ -884,22 +967,38 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
             icon.addPixmap(QPixmap(":/res/res/grey_heart.png"), QIcon.Normal, QIcon.On)
         self.mark_fav_media_button.setIcon(icon)
         config = mw.addonManager.getConfig(__name__)
+        duration = int(end - start)
+        _ = int(duration)
+        _,  second = _ // 60, _ % 60
+        hour, minute = _ // 60, _ % 60
+        duration_str = '%d:%02d:%02d' % (hour, minute, second)
+        if self.cur_sub[1].lower() in ('.rmvb', '.rm'):
+            cut_video_format = '.mkv'
+        else:
+            cut_video_format =  self.cur_sub[1].lower()
+        self.ffmpeg_cut_script = (
+            'ffmpeg -i "{0}" -ss {1} -t {2} -q:a 0 -map a "{3}.mp3" && '
+            'ffmpeg -i "{0}" -ss {1} -t {2} -c copy "{3}{4}" && '
+            'ffmpeg -i "{0}" -ss {1} -frames:v 1 "{3}.png"'
+            ).format(self.cur_sub[0] + self.cur_sub[1], start_str, duration_str, self.words_core, cut_video_format)
         if config.get('media_show_ffmpeg_cut_script', None):
-            duration = int(end - start)
-            _ = int(duration)
-            _,  second = _ // 60, _ % 60
-            hour, minute = _ // 60, _ % 60
-            duration_str = '%d:%02d:%02d ' % (hour, minute, second)
-            if self.cur_sub[1].lower() in ('.rmvb', '.rm'):
-                cut_video_format = '.mkv'
-            else:
-                cut_video_format =  self.cur_sub[1].lower()
-            ffmpeg_cut_script = (
-                'ffmpeg -i "{0}" -ss {1} -t {2} -q:a 0 -map a "{3}.mp3" && '
-                'ffmpeg -i "{0}" -ss {1} -t {2} -c copy "{3}{4}" && '
-                'ffmpeg -i "{0}" -ss {1} -frames:v 1 "{3}.png"'
-                ).format(self.cur_sub[0] + self.cur_sub[1], start_str, duration_str, self.words_core, cut_video_format)
-            self.ffmpeg_cut_script_label.setText(ffmpeg_cut_script)
+            self.ffmpeg_cut_script_label.setText(self.ffmpeg_cut_script)
+        if self.send_ralated_info_over_http_to_acclang:
+            data = dict(
+                type='word/anki_related_video',
+                word=urllib.parse.quote_plus(self.words_core),
+                video=urllib.parse.quote_plus(self.cur_sub[0] + self.cur_sub[1]),
+                start=urllib.parse.quote_plus(start_str),
+                duration=urllib.parse.quote_plus(duration_str))
+            data = urllib.parse.urlencode(data).encode()
+            req = urllib.request.Request(
+                'http://127.0.0.1:51234/acclang/word/ankirelatedvideo',
+                data=data)
+            try:
+                urllib.request.urlopen(req, timeout=0.1)
+            except urllib.error.URLError:
+                # don't care about timeout
+                pass
 
         self.media_play_para = [self.cur_sub[0] + self.cur_sub[1], start, end]
         mplayer_extended.stop()
@@ -958,6 +1057,17 @@ class RelateToMyDocDialog(QDialog, Ui_relate_to_my_doc_dialog):
             result = self.show_media(should_play=True)
             while result == "sub-next":
                 result = self.show_media()
+
+    def show_ffmpeg_cut_script(self):
+        if not self.ffmpeg_cut_script:
+            return
+        label = QLabel(self.ffmpeg_cut_script)
+        label.setWordWrap(True)
+        label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        dialog = QDialog()
+        layout = QHBoxLayout(dialog)
+        layout.addWidget(label)
+        dialog.exec_()
 
     def toggle_media(self):
 
